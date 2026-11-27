@@ -12,8 +12,8 @@ android {
     applicationId = "com.kairo.agent"
     minSdk = 26
     targetSdk = 36
-    versionCode = 26
-    versionName = "1.3.0-local-fast-v3"
+    versionCode = 27
+    versionName = "1.3.0-local-fast-v4"
     ndk {
       abiFilters += listOf("arm64-v8a")
     }

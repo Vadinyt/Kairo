@@ -1,6 +1,7 @@
 package com.kairo.agent.engine
 
 import android.os.Debug
+import android.os.SystemClock
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -32,7 +33,7 @@ internal object NativeLlama {
         true
     }
 
-    private external fun nativeLoad(path: String, threads: Int)
+    private external fun nativeLoad(path: String, threads: Int, contextTokens: Int)
     private external fun nativePrepare(prompt: ByteArray, temperature: Float, maxTokens: Int)
     private external fun nativeNext(): ByteArray?
     private external fun nativeMetrics(): DoubleArray?
@@ -42,6 +43,9 @@ internal object NativeLlama {
         modelPath: String,
         prompt: String,
         temperature: Float,
+        threads: Int,
+        contextTokens: Int,
+        maxTokens: Int,
         onStats: (NativeInferenceStats) -> Unit
     ): Flow<String> = flow {
         lock.withLock {
@@ -52,18 +56,22 @@ internal object NativeLlama {
                 throw IllegalStateException("Embedded llama.cpp is unavailable in this APK.", e)
             }
             currentCoroutineContext().ensureActive()
-            nativeLoad(modelPath, Runtime.getRuntime().availableProcessors().coerceIn(1, 4))
+            nativeLoad(modelPath, threads.coerceIn(2, 6).coerceAtMost(Runtime.getRuntime().availableProcessors().coerceAtLeast(1)),
+                if (contextTokens == 2048) 2048 else 4096)
             currentCoroutineContext().ensureActive()
-            nativePrepare(prompt.toByteArray(Charsets.UTF_8), temperature, 256)
+            nativePrepare(prompt.toByteArray(Charsets.UTF_8), temperature, maxTokens.coerceIn(128, 512))
             currentCoroutineContext().ensureActive()
             val pssMb = Debug.getPss() / 1024L
             val output = ByteArrayOutputStream()
             var emitted = 0
             var chunks = 0
+            val generationStartNs = SystemClock.elapsedRealtimeNanos()
             fun report(): NativeInferenceStats? {
                 val m = nativeMetrics() ?: return null
                 if (m.size != 4) return null
-                return NativeInferenceStats(m[0].toInt(), m[1], m[2].toInt(), m[3], pssMb).also(onStats)
+                val elapsedMs = (SystemClock.elapsedRealtimeNanos() - generationStartNs) / 1_000_000.0
+                val generationMs = if (m[3] > 0.0 && m[2].toInt() == chunks) m[3] else elapsedMs
+                return NativeInferenceStats(m[0].toInt(), m[1], chunks, generationMs, pssMb).also(onStats)
             }
             report()
             // Tokens can split UTF-8 characters; only emit completed text.

@@ -1072,6 +1072,12 @@ internal fun MainScreenContent(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
                             }
+                        } else if (state.settings.showNerdStats && state.nerdStats != null && state.nerdStats.directTool) {
+                            Surface(color = GeminiChipBg, shape = RoundedCornerShape(50)) {
+                                Text("Android • direct", color = GeminiAccentBlue,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
                         } else if (state.settings.showNerdStats && state.nerdStats != null && state.nerdStats.tokensPerSec > 0f) {
                             Surface(color = GeminiChipBg, shape = RoundedCornerShape(50)) {
                                 Text(

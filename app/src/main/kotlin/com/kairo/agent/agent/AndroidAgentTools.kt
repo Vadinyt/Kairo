@@ -123,6 +123,8 @@ class AndroidAgentTools(
         }
         appendLine("When you need to check device data or perform an Android action, emit ONLY a single tool call block:")
         appendLine("""<tool_call>{"tool":"TOOL_NAME","args":{...}}</tool_call>""")
+        appendLine("""Example for the current time: <tool_call>{"tool":"get_current_time","args":{}}</tool_call>""")
+        appendLine("A tool name alone is not a tool call. Use tools only for the user's requested operation; do not claim a tool ran before receiving its result.")
         appendLine("Available tools:")
         appendLine("""- get_device_status: {}""")
         appendLine("""- get_current_location: {} (reads current GPS/network location & city/address locally)""")

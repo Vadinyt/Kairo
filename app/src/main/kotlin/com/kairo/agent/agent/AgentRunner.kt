@@ -5,12 +5,14 @@ import com.kairo.agent.data.AgentSettings
 import com.kairo.agent.data.EngineBackendMode
 import com.kairo.agent.engine.GemmaAssistantEngine
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONObject
 import kotlinx.coroutines.flow.flow
 
 data class NerdStats(
     val tokensPerSec: Float = 0f,
     val ttftMs: Long = 0L,
-    val ramUsedMb: Long = 0L
+    val ramUsedMb: Long = 0L,
+    val directTool: Boolean = false
 )
 
 sealed interface AgentStreamEvent {
@@ -52,20 +54,20 @@ class AgentRunner(
         var firstTokenMs = 0L
         var chunkCount = 0
 
-        // Explicit read-only device status requests need no language-model tool selection.
-        if (settings.usesNativeModel && image == null && screenText.isNullOrBlank() &&
-            persona == AgentPersona.DEFAULT && isDirectDeviceStatusQuery(userPrompt)) {
-            emit(AgentStreamEvent.RunningTool("get_device_status"))
-            val result = tools.executeFromModelOutput(
-                rawOutput = """<tool_call>{"tool":"get_device_status","args":{}}</tool_call>"""
-            )
-            val summary = result.summary ?: "Device status unavailable"
+        // Deterministic dispatch is limited to complete, explicit supported requests.
+        val direct = if (settings.usesNativeModel && image == null && screenText.isNullOrBlank() &&
+            persona == AgentPersona.DEFAULT && !thinkHarder) directToolForQuery(userPrompt) else null
+        if (direct != null) {
+            emit(AgentStreamEvent.RunningTool(direct.name))
+            val payload = JSONObject().put("tool", direct.name).put("args", JSONObject(direct.args))
+            val result = tools.executeFromModelOutput(rawOutput = "<tool_call>" + payload + "</tool_call>")
+            val summary = result.summary ?: "Action result unavailable"
             emit(AgentStreamEvent.ToolCompleted(summary, result.success))
             emit(AgentStreamEvent.Finished(
                 finalText = result.resultData?.takeIf { it.isNotBlank() } ?: summary,
                 actionSummary = summary,
                 actionSuccess = result.success,
-                stats = NerdStats()
+                stats = NerdStats(directTool = true)
             ))
             return@flow
         }

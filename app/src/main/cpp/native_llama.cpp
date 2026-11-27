@@ -16,6 +16,7 @@ struct State {
     std::string path;
     std::vector<llama_token> cached;
     int remaining = 0;
+    int requested_context = 0;
     ~State() {
         if (sampler) llama_sampler_free(sampler);
         if (ctx) llama_free(ctx);
@@ -38,13 +39,18 @@ void invalidate() {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_kairo_agent_engine_NativeLlama_nativeLoad(JNIEnv * env, jobject, jstring path, jint threads) {
+Java_com_kairo_agent_engine_NativeLlama_nativeLoad(JNIEnv * env, jobject, jstring path, jint threads, jint context_tokens) {
     try {
         const char * raw = env->GetStringUTFChars(path, nullptr);
         require(raw != nullptr, "Unable to read model path.");
         std::string filename(raw);
         env->ReleaseStringUTFChars(path, raw);
-        if (state && state->path == filename) return;
+        const int requested_context = context_tokens == 2048 ? 2048 : 4096;
+        const int worker_count = std::clamp(static_cast<int>(threads), 1, 6);
+        if (state && state->path == filename && state->requested_context == requested_context) {
+            llama_set_n_threads(state->ctx, worker_count, worker_count);
+            return;
+        }
         state.reset();
         std::call_once(init_flag, [] { llama_backend_init(); });
         auto next = std::make_unique<State>();
@@ -54,16 +60,17 @@ Java_com_kairo_agent_engine_NativeLlama_nativeLoad(JNIEnv * env, jobject, jstrin
         require(next->model != nullptr, "Unable to load GGUF. Check model and available RAM.");
         require(!llama_model_has_encoder(next->model), "Encoder models are unsupported.");
         auto cp = llama_context_default_params();
-        cp.n_ctx = static_cast<uint32_t>(std::min(4096, llama_model_n_ctx_train(next->model)));
+        cp.n_ctx = static_cast<uint32_t>(std::min(requested_context, llama_model_n_ctx_train(next->model)));
         require(cp.n_ctx >= 512, "Model context is too small.");
         cp.n_batch = 256;
         cp.n_ubatch = 256;
-        cp.n_threads = std::clamp(static_cast<int>(threads), 1, 6);
+        cp.n_threads = worker_count;
         cp.n_threads_batch = cp.n_threads;
         cp.no_perf = false;
         next->ctx = llama_init_from_model(next->model, cp);
         require(next->ctx != nullptr, "Unable to allocate context.");
         next->path = filename;
+        next->requested_context = requested_context;
         state = std::move(next);
     } catch (const std::exception & e) { fail(env, e.what()); }
 }

@@ -212,6 +212,9 @@ class GemmaAssistantEngine {
                 modelPath = settings.nativeModelPath,
                 prompt = userQuery,
                 temperature = if (thinkHarder) 0.2f else 0.4f,
+                threads = settings.nativeThreads,
+                contextTokens = settings.nativeContextTokens,
+                maxTokens = settings.nativeMaxTokens,
                 onStats = { nativeStats = it }
             )
         }

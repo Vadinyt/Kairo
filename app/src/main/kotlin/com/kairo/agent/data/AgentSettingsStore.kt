@@ -36,7 +36,10 @@ data class AgentSettings(
     val preferredLanguage: String = "en",
     val nativeModelPath: String = "",
     val nativeModelName: String = "",
-    val nativeModelEnabled: Boolean = false
+    val nativeModelEnabled: Boolean = false,
+    val nativeThreads: Int = 4,
+    val nativeContextTokens: Int = 4096,
+    val nativeMaxTokens: Int = 256
 ) {
     val usesNativeModel: Boolean
         get() = nativeModelEnabled && nativeModelPath.isNotBlank() &&
@@ -74,7 +77,10 @@ class AgentSettingsStore(context: Context) {
         preferredLanguage = prefs.getString(KEY_LANG, "en") ?: "en",
         nativeModelPath = prefs.getString(KEY_NATIVE_PATH, "") ?: "",
         nativeModelName = prefs.getString(KEY_NATIVE_NAME, "") ?: "",
-        nativeModelEnabled = prefs.getBoolean(KEY_NATIVE_ENABLED, false)
+        nativeModelEnabled = prefs.getBoolean(KEY_NATIVE_ENABLED, false),
+        nativeThreads = prefs.getInt(KEY_NATIVE_THREADS, 4).coerceIn(2, 6),
+        nativeContextTokens = prefs.getInt(KEY_NATIVE_CONTEXT, 4096).let { if (it == 2048) 2048 else 4096 },
+        nativeMaxTokens = prefs.getInt(KEY_NATIVE_OUTPUT, 256).coerceIn(128, 512)
     )
 
     fun save(settings: AgentSettings) {
@@ -98,6 +104,9 @@ class AgentSettingsStore(context: Context) {
             .putString(KEY_NATIVE_PATH, settings.nativeModelPath)
             .putString(KEY_NATIVE_NAME, settings.nativeModelName)
             .putBoolean(KEY_NATIVE_ENABLED, settings.nativeModelEnabled)
+            .putInt(KEY_NATIVE_THREADS, settings.nativeThreads)
+            .putInt(KEY_NATIVE_CONTEXT, settings.nativeContextTokens)
+            .putInt(KEY_NATIVE_OUTPUT, settings.nativeMaxTokens)
             .apply()
     }
 
@@ -121,5 +130,8 @@ class AgentSettingsStore(context: Context) {
         const val KEY_NATIVE_PATH = "native_model_path"
         const val KEY_NATIVE_NAME = "native_model_name"
         const val KEY_NATIVE_ENABLED = "native_model_enabled"
+        const val KEY_NATIVE_THREADS = "native_threads"
+        const val KEY_NATIVE_CONTEXT = "native_context_tokens"
+        const val KEY_NATIVE_OUTPUT = "native_max_tokens"
     }
 }

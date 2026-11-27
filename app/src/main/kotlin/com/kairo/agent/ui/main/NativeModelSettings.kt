@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -136,7 +137,7 @@ internal fun NativeModelSettings(
     }
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("On-device GGUF (experimental)", color = Color(0xFFA8C7FA), style = MaterialTheme.typography.labelLarge)
-        Text("Runs llama.cpp inside Kairo. No Termux, HTTP server or root required. Text-only; import a single instruction-tuned GGUF, preferably 1–3B Q4.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB9BDC4))
+        Text("Runs llama.cpp inside Kairo. No Termux, HTTP server or root required. Text-only; import a single instruction-tuned GGUF, preferably 1–4B Q4.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB9BDC4))
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Use embedded model", color = Color(0xFFE3E3E3))
             Switch(
@@ -149,6 +150,32 @@ internal fun NativeModelSettings(
                     if (!enabled) scope.launch { NativeLlama.release() }
                 }
             )
+        }
+        Text("CPU threads", color = Color(0xFFE3E3E3), style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(2, 3, 4, 6).forEach { n ->
+                FilterChip(selected = settings.nativeThreads == n,
+                    onClick = { update(currentSettings.copy(nativeThreads = n)) },
+                    enabled = !importing && !isGenerating, label = { Text(n.toString()) })
+            }
+        }
+        Text("4 is the default. More threads are not always faster and can use more power.", style = MaterialTheme.typography.bodySmall)
+        Text("Context length", color = Color(0xFFE3E3E3), style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(2048, 4096).forEach { n ->
+                FilterChip(selected = settings.nativeContextTokens == n,
+                    onClick = { update(currentSettings.copy(nativeContextTokens = n)) },
+                    enabled = !importing && !isGenerating, label = { Text(n.toString()) })
+            }
+        }
+        Text("2048 saves cache memory. Changing context reloads the model on the next request.", style = MaterialTheme.typography.bodySmall)
+        Text("Maximum response tokens", color = Color(0xFFE3E3E3), style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(128, 256, 512).forEach { n ->
+                FilterChip(selected = settings.nativeMaxTokens == n,
+                    onClick = { update(currentSettings.copy(nativeMaxTokens = n)) },
+                    enabled = !importing && !isGenerating, label = { Text(n.toString()) })
+            }
         }
         Text(settings.nativeModelName.ifBlank { "No GGUF imported" }, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB9BDC4))
         Button(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !importing && !isGenerating, modifier = Modifier.fillMaxWidth()) {
