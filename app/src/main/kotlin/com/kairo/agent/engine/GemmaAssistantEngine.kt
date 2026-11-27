@@ -305,7 +305,8 @@ class GemmaAssistantEngine {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 8000
-            readTimeout = 60000
+            // Slow local CPUs can spend more than a minute evaluating a prompt.
+            readTimeout = if (apiKey.isBlank()) 180_000 else 60_000
             setRequestProperty("Content-Type", "application/json")
             if (apiKey.isNotBlank()) {
                 setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")

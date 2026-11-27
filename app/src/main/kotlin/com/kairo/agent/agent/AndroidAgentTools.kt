@@ -109,7 +109,14 @@ class AndroidAgentTools(
         appendLine("User's preferred language: $langLabel. Reply in $langLabel unless the user explicitly writes in another language.")
         appendLine("Persona instruction: ${persona.instruction}")
         if (lightweightGreeting) {
-            appendLine("Reply with a short greeting. Do not call tools or emit memory tags.")
+            appendLine("Answer the user's question directly and concisely. Do not call tools or emit memory tags.")
+            if (conversationHistory.isNotEmpty()) {
+                appendLine("Recent conversation:")
+                conversationHistory.takeLast(2).forEach { (question, answer) ->
+                    appendLine("User: ${question.take(240)}")
+                    appendLine("Kairo: ${answer.take(320)}")
+                }
+            }
             append("User: ")
             append(userMessage)
             return@buildString
