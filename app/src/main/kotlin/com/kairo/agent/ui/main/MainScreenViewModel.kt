@@ -109,7 +109,8 @@ class MainScreenViewModel(
     }
 
     fun updateSettings(newSettings: AgentSettings) {
-        val profileChanged = newSettings.aiCoreModelProfile != _state.value.settings.aiCoreModelProfile
+        val profileChanged = newSettings.aiCoreModelProfile != _state.value.settings.aiCoreModelProfile ||
+            newSettings.usesNativeModel != _state.value.settings.usesNativeModel
         settingsStore?.save(newSettings)
         _state.update { it.copy(settings = newSettings) }
         if (profileChanged) {
@@ -538,10 +539,15 @@ class MainScreenViewModel(
 
     fun refreshStatus() {
         viewModelScope.launch {
+            if (_state.value.settings.usesNativeModel) {
+                _state.update { it.copy(availability = ModelAvailability.UNAVAILABLE, availableAiCoreModels = emptyList(), statusDetail = null) }
+                return@launch
+            }
             _state.update { it.copy(availability = ModelAvailability.CHECKING, statusDetail = null) }
             val profile = _state.value.settings.aiCoreModelProfile
             val models = engine.discoverAiCoreModels()
             val status = engine.queryAvailability(profile)
+            if (_state.value.settings.usesNativeModel) return@launch
             _state.update { it.copy(availability = status, availableAiCoreModels = models) }
             if (status == ModelAvailability.AVAILABLE) {
                 engine.warmupModel(profile)

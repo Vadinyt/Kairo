@@ -248,6 +248,13 @@ class AgentRunner(
         val ttft = if (firstTokenMs > 0L) (firstTokenMs - startMs).coerceAtLeast(0L) else 0L
         val rt = Runtime.getRuntime()
         val ramMb = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L)
+        engine.nativeStats?.let { native ->
+            return NerdStats(
+                tokensPerSec = native.tokensPerSecond,
+                ttftMs = ttft,
+                ramUsedMb = native.processPssMb
+            )
+        }
         return NerdStats(
             tokensPerSec = if (generationSec > 0f && tokens > 1) {
                 (tokens - 1) / generationSec

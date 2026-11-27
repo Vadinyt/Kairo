@@ -55,6 +55,10 @@ class GemmaAssistantEngine {
 
     private val clients = ConcurrentHashMap<AiCoreModelProfile, GenerativeModel>()
 
+    @Volatile
+    internal var nativeStats: NativeInferenceStats? = null
+        private set
+
     private fun getOrCreateClient(profile: AiCoreModelProfile): GenerativeModel {
         return clients.getOrPut(profile) {
             when (profile) {
@@ -199,6 +203,18 @@ class GemmaAssistantEngine {
         thinkHarder: Boolean = false,
         settings: AgentSettings = AgentSettings()
     ): Flow<String> {
+        nativeStats = null
+        if (settings.usesNativeModel) {
+            if (image != null) return flow {
+                throw IllegalArgumentException("The embedded GGUF engine is text-only. Disable it in Settings to use another image-capable backend.")
+            }
+            return NativeLlama.generate(
+                modelPath = settings.nativeModelPath,
+                prompt = userQuery,
+                temperature = if (thinkHarder) 0.2f else 0.4f,
+                onStats = { nativeStats = it }
+            )
+        }
         if (settings.backendMode == EngineBackendMode.CLOUD_AI) {
             return streamFromLocalHttp(
                 userQuery = userQuery,
