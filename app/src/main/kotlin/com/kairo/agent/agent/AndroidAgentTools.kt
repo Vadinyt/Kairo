@@ -95,7 +95,8 @@ class AndroidAgentTools(
         persona: AgentPersona = AgentPersona.DEFAULT,
         rootPowerMode: Boolean = false,
         preferredLanguage: String = "en",
-        incognito: Boolean = false
+        incognito: Boolean = false,
+        lightweightGreeting: Boolean = false
     ): String = buildString {
         appendLine("You are Kairo (pronounced /kaj/roo/), a helpful on-device Android AI agent powered by Gemma 4.")
         val langLabel = when (preferredLanguage.lowercase()) {
@@ -107,42 +108,23 @@ class AndroidAgentTools(
         }
         appendLine("User's preferred language: $langLabel. Reply in $langLabel unless the user explicitly writes in another language.")
         appendLine("Persona instruction: ${persona.instruction}")
-        appendLine("Live device context: ${currentTimeString()}, ${batteryContextString()}.")
-
-        if (persona == AgentPersona.GRAMMAR) {
-            val clip = readClipboardText()
-            if (clip.isNotBlank()) {
-                appendLine("User's current clipboard text: \"$clip\"")
-            }
-        }
-
-        if (!incognito) {
-            val memoryBlock = memoryStore.formatForPrompt()
-            if (memoryBlock.isNotEmpty()) {
-                append(memoryBlock)
-            }
-            appendLine("Memory rule: ONLY emit <memory>fact about the user</memory> when the USER explicitly shares personal facts, preferences, their name, routines, or goals about THEMSELVES. NEVER save your own responses, device status, tool outputs, or general facts.")
-        } else {
-            appendLine("Incognito mode is active: DO NOT reference personal memory and DO NOT emit <memory> tags.")
-        }
-
-        if (!screenText.isNullOrBlank()) {
-            appendLine("Visible text from the user's current screen:")
-            appendLine(screenText.take(2000))
-        }
-
-        if (conversationHistory.isNotEmpty()) {
-            appendLine("Recent conversation context:")
-            conversationHistory.takeLast(6).forEach { (prevUser, prevAssistant) ->
-                appendLine("User: $prevUser")
-                if (prevAssistant.isNotBlank()) {
-                    appendLine("Kairo: ${prevAssistant.take(400)}")
+        if (lightweightGreeting) {
+            appendLine("Answer the user's question directly and concisely. Do not call tools or emit memory tags.")
+            if (conversationHistory.isNotEmpty()) {
+                appendLine("Recent conversation:")
+                conversationHistory.takeLast(2).forEach { (question, answer) ->
+                    appendLine("User: ${question.take(240)}")
+                    appendLine("Kairo: ${answer.take(320)}")
                 }
             }
+            append("User: ")
+            append(userMessage)
+            return@buildString
         }
-
         appendLine("When you need to check device data or perform an Android action, emit ONLY a single tool call block:")
         appendLine("""<tool_call>{"tool":"TOOL_NAME","args":{...}}</tool_call>""")
+        appendLine("""Example for the current time: <tool_call>{"tool":"get_current_time","args":{}}</tool_call>""")
+        appendLine("A tool name alone is not a tool call. Use tools only for the user's requested operation; do not claim a tool ran before receiving its result.")
         appendLine("Available tools:")
         appendLine("""- get_device_status: {}""")
         appendLine("""- get_current_location: {} (reads current GPS/network location & city/address locally)""")
@@ -200,6 +182,41 @@ class AndroidAgentTools(
             appendLine("""- run_shell_command: {"command": "string"} (executes a shell/root command on device)""")
         }
         appendLine("IMPORTANT: Never say you lack a capability if a matching tool is listed above. Emit <tool_call>...</tool_call> directly.")
+
+        appendLine("Live device context: ${currentTimeString()}, ${batteryContextString()}.")
+
+        if (persona == AgentPersona.GRAMMAR) {
+            val clip = readClipboardText()
+            if (clip.isNotBlank()) {
+                appendLine("User's current clipboard text: \"$clip\"")
+            }
+        }
+
+        if (!incognito) {
+            val memoryBlock = memoryStore.formatForPrompt()
+            if (memoryBlock.isNotEmpty()) {
+                append(memoryBlock)
+            }
+            appendLine("Memory rule: ONLY emit <memory>fact about the user</memory> when the USER explicitly shares personal facts, preferences, their name, routines, or goals about THEMSELVES. NEVER save your own responses, device status, tool outputs, or general facts.")
+        } else {
+            appendLine("Incognito mode is active: DO NOT reference personal memory and DO NOT emit <memory> tags.")
+        }
+
+        if (!screenText.isNullOrBlank()) {
+            appendLine("Visible text from the user's current screen:")
+            appendLine(screenText.take(2000))
+        }
+
+        if (conversationHistory.isNotEmpty()) {
+            appendLine("Recent conversation context:")
+            conversationHistory.takeLast(6).forEach { (prevUser, prevAssistant) ->
+                appendLine("User: $prevUser")
+                if (prevAssistant.isNotBlank()) {
+                    appendLine("Kairo: ${prevAssistant.take(400)}")
+                }
+            }
+        }
+
         val explicitToolMatch = Regex("""(?:^|\s)[/@]([a-z_]{3,})\b""").find(userMessage.trim())
         if (explicitToolMatch != null) {
             appendLine("EXPLICIT TOOL OVERRIDE: The user explicitly referenced `${explicitToolMatch.groupValues[1]}`. You MUST invoke `${explicitToolMatch.groupValues[1]}` via <tool_call>...</tool_call>.")

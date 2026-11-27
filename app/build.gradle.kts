@@ -7,12 +7,28 @@ plugins {
 android {
   namespace = "com.kairo.agent"
   compileSdk = 36
+  ndkVersion = "29.0.14206865"
   defaultConfig {
     applicationId = "com.kairo.agent"
     minSdk = 26
     targetSdk = 36
-    versionCode = 25
-    versionName = "1.3.0"
+    versionCode = 27
+    versionName = "1.3.0-local-fast-v4"
+    ndk {
+      abiFilters += listOf("arm64-v8a")
+    }
+    externalNativeBuild {
+      cmake {
+        arguments += listOf("-DANDROID_STL=c++_static")
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path("src/main/cpp/CMakeLists.txt")
+      version = "3.31.5"
+    }
   }
 
   buildTypes {

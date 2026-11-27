@@ -1044,7 +1044,7 @@ internal fun MainScreenContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            val modelSubtitle = when (state.settings.backendMode) {
+                            val modelSubtitle = if (state.settings.usesNativeModel) "GGUF" else when (state.settings.backendMode) {
                                 com.kairo.agent.data.EngineBackendMode.CLOUD_AI -> "Cloud • ${state.settings.cloudModelName}"
                                 com.kairo.agent.data.EngineBackendMode.LOCAL_HTTP -> state.settings.localModelName
                                 else -> "Gemma 4"
@@ -1071,6 +1071,12 @@ internal fun MainScreenContent(
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
+                            }
+                        } else if (state.settings.showNerdStats && state.nerdStats != null && state.nerdStats.directTool) {
+                            Surface(color = GeminiChipBg, shape = RoundedCornerShape(50)) {
+                                Text("Android • direct", color = GeminiAccentBlue,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                             }
                         } else if (state.settings.showNerdStats && state.nerdStats != null && state.nerdStats.tokensPerSec > 0f) {
                             Surface(color = GeminiChipBg, shape = RoundedCornerShape(50)) {
@@ -1592,7 +1598,7 @@ internal fun MainScreenContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    val headerTitle = when (state.settings.backendMode) {
+                    val headerTitle = if (state.settings.usesNativeModel) "Kairo • Embedded GGUF" else when (state.settings.backendMode) {
                         com.kairo.agent.data.EngineBackendMode.CLOUD_AI -> "Kairo • Cloud (${state.settings.cloudModelName})"
                         com.kairo.agent.data.EngineBackendMode.LOCAL_HTTP -> "Kairo • ${state.settings.localModelName}"
                         else -> "Kairo • Powered by Gemma 4"
@@ -1615,6 +1621,7 @@ internal fun MainScreenContent(
                 }
 
                 val statusText = when {
+                    state.settings.usesNativeModel -> "Embedded llama.cpp • ${state.settings.nativeModelName}"
                     state.settings.backendMode == com.kairo.agent.data.EngineBackendMode.CLOUD_AI -> "Using external Cloud AI (${state.settings.cloudEndpointUrl})"
                     state.settings.backendMode == com.kairo.agent.data.EngineBackendMode.LOCAL_HTTP -> "Using Local HTTP (${state.settings.localEndpointUrl})"
                     state.settings.bypassCompatibility -> "Bypass Mode active (${state.settings.backendMode.name})"
@@ -1637,7 +1644,7 @@ internal fun MainScreenContent(
                 }
 
                 // AICore Model Selector (Auto + discovered Stable/Preview Fast/Full models)
-                Text("AICore Model", color = GeminiAccentBlue, style = MaterialTheme.typography.labelLarge)
+                Text(if (state.settings.usesNativeModel) "AICore fallback (disable GGUF in Settings)" else "AICore Model", color = GeminiAccentBlue, style = MaterialTheme.typography.labelLarge)
                 Surface(
                     color = Color(0xFF141619),
                     shape = RoundedCornerShape(16.dp),

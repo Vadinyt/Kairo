@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(kairo_llama LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+foreach(flag LLAMA_BUILD_COMMON LLAMA_BUILD_TESTS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_TOOLS LLAMA_BUILD_SERVER LLAMA_BUILD_APP LLAMA_OPENSSL GGML_NATIVE GGML_BACKEND_DL GGML_OPENMP GGML_LLAMAFILE GGML_CPU_KLEIDIAI GGML_BLAS)
+    set(${flag} OFF CACHE BOOL "" FORCE)
+endforeach()
+include(FetchContent)
+FetchContent_Declare(llama_cpp
+    URL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/6d8a8886fa44a4a404c58ace93052ea680193981
+)
+FetchContent_MakeAvailable(llama_cpp)
+add_library(kairo_llama SHARED native_llama.cpp)
+target_link_libraries(kairo_llama PRIVATE llama android log)

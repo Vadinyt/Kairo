@@ -100,6 +100,12 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            NativeModelSettings(
+                settings = state.settings,
+                isGenerating = state.isGenerating,
+                onUpdateSettings = onUpdateSettings
+            )
+            HorizontalDivider(color = Color(0xFF232528))
             AppLanguagePickerRow(
                 selectedAppLang = state.settings.appLanguage,
                 selectedModelLang = state.settings.preferredLanguage,

@@ -1,6 +1,12 @@
 name: Build & Attach Release APK
 
 on:
+  push:
+    branches:
+      - performance/local-fast-v1
+  pull_request:
+    branches:
+      - main
   release:
     types: [published]
   workflow_dispatch:

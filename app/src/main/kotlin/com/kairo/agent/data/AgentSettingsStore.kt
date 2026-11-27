@@ -33,8 +33,18 @@ data class AgentSettings(
     val mcpServerUrls: String = "",
     val multiAgentEnabled: Boolean = false,
     val appLanguage: String = "en",
-    val preferredLanguage: String = "en"
-)
+    val preferredLanguage: String = "en",
+    val nativeModelPath: String = "",
+    val nativeModelName: String = "",
+    val nativeModelEnabled: Boolean = false,
+    val nativeThreads: Int = 4,
+    val nativeContextTokens: Int = 4096,
+    val nativeMaxTokens: Int = 256
+) {
+    val usesNativeModel: Boolean
+        get() = nativeModelEnabled && nativeModelPath.isNotBlank() &&
+            (backendMode == EngineBackendMode.AUTO || backendMode == EngineBackendMode.LOCAL_HTTP)
+}
 
 /**
  * Persists onboarding completion, power-user, compatibility bypass, and local model backend settings.
@@ -64,7 +74,13 @@ class AgentSettingsStore(context: Context) {
         mcpServerUrls = prefs.getString(KEY_MCP_URLS, "") ?: "",
         multiAgentEnabled = prefs.getBoolean(KEY_MULTI_AGENT, false),
         appLanguage = prefs.getString(KEY_APP_LANG, "en") ?: "en",
-        preferredLanguage = prefs.getString(KEY_LANG, "en") ?: "en"
+        preferredLanguage = prefs.getString(KEY_LANG, "en") ?: "en",
+        nativeModelPath = prefs.getString(KEY_NATIVE_PATH, "") ?: "",
+        nativeModelName = prefs.getString(KEY_NATIVE_NAME, "") ?: "",
+        nativeModelEnabled = prefs.getBoolean(KEY_NATIVE_ENABLED, false),
+        nativeThreads = prefs.getInt(KEY_NATIVE_THREADS, 4).coerceIn(2, 6),
+        nativeContextTokens = prefs.getInt(KEY_NATIVE_CONTEXT, 4096).let { if (it == 2048) 2048 else 4096 },
+        nativeMaxTokens = prefs.getInt(KEY_NATIVE_OUTPUT, 256).coerceIn(128, 512)
     )
 
     fun save(settings: AgentSettings) {
@@ -85,6 +101,12 @@ class AgentSettingsStore(context: Context) {
             .putBoolean(KEY_MULTI_AGENT, settings.multiAgentEnabled)
             .putString(KEY_APP_LANG, settings.appLanguage)
             .putString(KEY_LANG, settings.preferredLanguage)
+            .putString(KEY_NATIVE_PATH, settings.nativeModelPath)
+            .putString(KEY_NATIVE_NAME, settings.nativeModelName)
+            .putBoolean(KEY_NATIVE_ENABLED, settings.nativeModelEnabled)
+            .putInt(KEY_NATIVE_THREADS, settings.nativeThreads)
+            .putInt(KEY_NATIVE_CONTEXT, settings.nativeContextTokens)
+            .putInt(KEY_NATIVE_OUTPUT, settings.nativeMaxTokens)
             .apply()
     }
 
@@ -105,5 +127,11 @@ class AgentSettingsStore(context: Context) {
         const val KEY_MULTI_AGENT = "multi_agent_enabled"
         const val KEY_APP_LANG = "app_language"
         const val KEY_LANG = "preferred_language"
+        const val KEY_NATIVE_PATH = "native_model_path"
+        const val KEY_NATIVE_NAME = "native_model_name"
+        const val KEY_NATIVE_ENABLED = "native_model_enabled"
+        const val KEY_NATIVE_THREADS = "native_threads"
+        const val KEY_NATIVE_CONTEXT = "native_context_tokens"
+        const val KEY_NATIVE_OUTPUT = "native_max_tokens"
     }
 }

@@ -2,14 +2,17 @@ package com.kairo.agent.agent
 
 import android.graphics.Bitmap
 import com.kairo.agent.data.AgentSettings
+import com.kairo.agent.data.EngineBackendMode
 import com.kairo.agent.engine.GemmaAssistantEngine
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONObject
 import kotlinx.coroutines.flow.flow
 
 data class NerdStats(
     val tokensPerSec: Float = 0f,
     val ttftMs: Long = 0L,
-    val ramUsedMb: Long = 0L
+    val ramUsedMb: Long = 0L,
+    val directTool: Boolean = false
 )
 
 sealed interface AgentStreamEvent {
@@ -51,6 +54,24 @@ class AgentRunner(
         var firstTokenMs = 0L
         var chunkCount = 0
 
+        // Deterministic dispatch is limited to complete, explicit supported requests.
+        val direct = if (settings.usesNativeModel && image == null && screenText.isNullOrBlank() &&
+            persona == AgentPersona.DEFAULT && !thinkHarder) directToolForQuery(userPrompt) else null
+        if (direct != null) {
+            emit(AgentStreamEvent.RunningTool(direct.name))
+            val payload = JSONObject().put("tool", direct.name).put("args", JSONObject(direct.args))
+            val result = tools.executeFromModelOutput(rawOutput = "<tool_call>" + payload + "</tool_call>")
+            val summary = result.summary ?: "Action result unavailable"
+            emit(AgentStreamEvent.ToolCompleted(summary, result.success))
+            emit(AgentStreamEvent.Finished(
+                finalText = result.resultData?.takeIf { it.isNotBlank() } ?: summary,
+                actionSummary = summary,
+                actionSuccess = result.success,
+                stats = NerdStats(directTool = true)
+            ))
+            return@flow
+        }
+
         val route = classifyIntent(userPrompt, !screenText.isNullOrBlank())
         val baseRoutedPrompt = when (route) {
             MicroAgentRoute.TOOL_ACTION -> "$userPrompt\n[Router: Focus on accurate JSON tool-calling.]"
@@ -75,6 +96,14 @@ class AgentRunner(
             baseRoutedPrompt
         }
 
+        // Keep ambiguous or action-oriented requests on the existing full agent path.
+        val localBackend = settings.backendMode == EngineBackendMode.AUTO ||
+            settings.backendMode == EngineBackendMode.LOCAL_HTTP
+        val lightweightChat = image == null && screenText.isNullOrBlank() &&
+            persona == AgentPersona.DEFAULT && !thinkHarder && !settings.multiAgentEnabled &&
+            !settings.rootPowerMode && settings.mcpServerUrls.isBlank() &&
+            localBackend && route == MicroAgentRoute.GENERAL &&
+            isLightweightChatQuery(userPrompt)
         val initialPrompt = tools.buildAgentPrompt(
             userMessage = routedPrompt,
             screenText = screenText,
@@ -82,7 +111,8 @@ class AgentRunner(
             persona = persona,
             rootPowerMode = settings.rootPowerMode,
             preferredLanguage = settings.preferredLanguage,
-            incognito = incognito
+            incognito = incognito,
+            lightweightGreeting = lightweightChat
         )
         val firstTurnRaw = StringBuilder()
 
@@ -102,6 +132,19 @@ class AgentRunner(
         }
 
         val rawOutput = firstTurnRaw.toString()
+        if (lightweightChat) {
+            // A plain chat response must never execute tools or persist memory.
+            val clean = tools.stripToolCallMarkup(rawOutput).ifBlank {
+                "I didn't receive a response from the model. Try rephrasing or tapping Regenerate."
+            }
+            emit(AgentStreamEvent.Finished(
+                finalText = clean,
+                actionSummary = null,
+                actionSuccess = true,
+                stats = computeStats(startMs, firstTokenMs, chunkCount)
+            ))
+            return@flow
+        }
         val autoSavedMemories = if (incognito) emptyList() else tools.extractAndSaveMemories(rawOutput)
 
         if (!tools.hasToolCall(rawOutput)) {
@@ -220,12 +263,22 @@ class AgentRunner(
 
     private fun computeStats(startMs: Long, firstTokenMs: Long, tokens: Int): NerdStats {
         val now = System.currentTimeMillis()
-        val elapsedSec = ((now - startMs).coerceAtLeast(1L)) / 1000f
+        // Text chunks are only a token-count estimate; exclude initial prompt latency.
+        val generationSec = if (firstTokenMs > 0L) (now - firstTokenMs) / 1000f else 0f
         val ttft = if (firstTokenMs > 0L) (firstTokenMs - startMs).coerceAtLeast(0L) else 0L
         val rt = Runtime.getRuntime()
         val ramMb = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L)
+        engine.nativeStats?.let { native ->
+            return NerdStats(
+                tokensPerSec = native.tokensPerSecond,
+                ttftMs = ttft,
+                ramUsedMb = native.processPssMb
+            )
+        }
         return NerdStats(
-            tokensPerSec = tokens / elapsedSec,
+            tokensPerSec = if (generationSec > 0f && tokens > 1) {
+                (tokens - 1) / generationSec
+            } else 0f,
             ttftMs = ttft,
             ramUsedMb = ramMb
         )
@@ -252,4 +305,27 @@ class AgentRunner(
             "set_ringer_mode", "forget_memory"
         )
     }
+}
+
+
+// Conservatively recognize plain factual questions in English and French.
+private val LIGHTWEIGHT_GREETING = Regex("""^(hi|hello|hey|bonjour|salut|coucou|yo)[!?.\s]*$""", RegexOption.IGNORE_CASE)
+private val LIGHTWEIGHT_QUESTION = Regex("""^(explain\b|define\b|what (?:is|are)\b|how (?:does|do)\b|why\b|describe\b|explique\b|définis\b|definis\b|qu['’]est-ce (?:que|qu['’])|c['’]est quoi\b|comment (?:fonctionne|marche)\b|pourquoi\b|décris\b|decris\b)""", RegexOption.IGNORE_CASE)
+private val ACTION_OR_CONTEXT = Regex("""(?:^|\s)[/@][a-z_]{3,}\b|\b(?:my|me|mine|mon|ma|mes|moi|phone|téléphone|battery|batterie|notification[s]?|clipboard|presse-papiers|contact[s]?|weather|météo|today|aujourd'hui|currently|actuellement|latest|récent|remember|souviens|alarm|alarme|timer|minuteur|search|cherche|recherche|open|ouvre|send|envoie|call|appelle|install|installe|settings|paramètres|calendar|calendrier|location|localisation|gps|sms|whatsapp|email|root|shell|mcp)\b""", RegexOption.IGNORE_CASE)
+internal fun isLightweightChatQuery(query: String): Boolean {
+    val text = query.trim()
+    if (LIGHTWEIGHT_GREETING.matches(text)) return true
+    if (text.length > 500 || !LIGHTWEIGHT_QUESTION.containsMatchIn(text)) return false
+    // "Explain to me" / "Explique-moi" are ordinary explanatory prefixes.
+    val normalized = text.replace(Regex("""^(explain to me|explique[- ]moi)\b""", RegexOption.IGNORE_CASE), "explain")
+    return !ACTION_OR_CONTEXT.containsMatchIn(normalized)
+}
+
+
+// Whole-message matches only; no model-generated tool names or write actions.
+private val DIRECT_STATUS_EN = Regex("""^(?:please\s+)?(?:(?:check|show(?: me)?|tell me|give me|what is|what's)\s+)?(?:my\s+|the\s+)?(?:battery(?:\s+(?:level|percentage|status))?(?:\s*(?:&|and)\s*(?:device\s+)?status)?|(?:phone|device)\s+status)(?:\s+please)?[?.!]*$""", RegexOption.IGNORE_CASE)
+private val DIRECT_STATUS_FR = Regex("""^(?:v[ée]rifie|affiche|donne-moi|quel est)\s+(?:mon|ma|le|la)\s+(?:batterie|niveau de batterie|(?:[ée]tat|statut) (?:du|de mon) t[ée]l[ée]phone)[?.!]*$""", RegexOption.IGNORE_CASE)
+internal fun isDirectDeviceStatusQuery(query: String): Boolean {
+    val text = query.trim().replace(Regex("""\s+([?.!])$"""), "$1")
+    return DIRECT_STATUS_EN.matches(text) || DIRECT_STATUS_FR.matches(text)
 }
