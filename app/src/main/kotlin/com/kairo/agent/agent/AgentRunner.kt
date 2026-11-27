@@ -75,6 +75,11 @@ class AgentRunner(
             baseRoutedPrompt
         }
 
+        // Only bypass the full tool catalog for unambiguous standalone greetings.
+        val lightweightGreeting = image == null && screenText.isNullOrBlank() &&
+            conversationHistory.isEmpty() && persona == AgentPersona.DEFAULT &&
+            !thinkHarder && Regex("""^(hi|hello|hey|bonjour|salut|coucou|yo)[!?.\s]*$""",
+                RegexOption.IGNORE_CASE).matches(userPrompt.trim())
         val initialPrompt = tools.buildAgentPrompt(
             userMessage = routedPrompt,
             screenText = screenText,
@@ -82,7 +87,8 @@ class AgentRunner(
             persona = persona,
             rootPowerMode = settings.rootPowerMode,
             preferredLanguage = settings.preferredLanguage,
-            incognito = incognito
+            incognito = incognito,
+            lightweightGreeting = lightweightGreeting
         )
         val firstTurnRaw = StringBuilder()
 
@@ -220,12 +226,15 @@ class AgentRunner(
 
     private fun computeStats(startMs: Long, firstTokenMs: Long, tokens: Int): NerdStats {
         val now = System.currentTimeMillis()
-        val elapsedSec = ((now - startMs).coerceAtLeast(1L)) / 1000f
+        // Text chunks are only a token-count estimate; exclude initial prompt latency.
+        val generationSec = if (firstTokenMs > 0L) (now - firstTokenMs) / 1000f else 0f
         val ttft = if (firstTokenMs > 0L) (firstTokenMs - startMs).coerceAtLeast(0L) else 0L
         val rt = Runtime.getRuntime()
         val ramMb = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L)
         return NerdStats(
-            tokensPerSec = tokens / elapsedSec,
+            tokensPerSec = if (generationSec > 0f && tokens > 1) {
+                (tokens - 1) / generationSec
+            } else 0f,
             ttftMs = ttft,
             ramUsedMb = ramMb
         )

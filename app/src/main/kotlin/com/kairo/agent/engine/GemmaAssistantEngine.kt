@@ -312,55 +312,57 @@ class GemmaAssistantEngine {
             }
         }
 
-        val contentArray = JSONArray().apply {
-            put(JSONObject().put("type", "text").put("text", userQuery))
-            if (image != null) {
-                val baos = ByteArrayOutputStream()
-                image.compress(Bitmap.CompressFormat.JPEG, 85, baos)
-                val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-                put(
-                    JSONObject().put("type", "image_url")
-                        .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64"))
-                )
-            }
-        }
-
-        val payload = JSONObject().apply {
-            put("model", modelName)
-            put("stream", true)
-            put("temperature", temperatureValue.toDouble())
-            put(
-                "messages",
-                JSONArray().put(
-                    JSONObject().put("role", "user").put("content", contentArray)
-                )
-            )
-        }
-
-        conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
-
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-            throw IllegalStateException("Local model endpoint error ($code): $err")
-        }
-
-        conn.inputStream.bufferedReader().useLines { lines ->
-            for (line in lines) {
-                val trimmed = line.trim()
-                if (!trimmed.startsWith("data:")) continue
-                val data = trimmed.removePrefix("data:").trim()
-                if (data == "[DONE]") break
-                runCatching {
-                    val obj = JSONObject(data)
-                    val delta = obj.optJSONArray("choices")
-                        ?.optJSONObject(0)
-                        ?.optJSONObject("delta")
-                        ?.optString("content")
-                        .orEmpty()
-                    if (delta.isNotEmpty()) emit(delta)
+        try {
+            val contentArray = JSONArray().apply {
+                put(JSONObject().put("type", "text").put("text", userQuery))
+                if (image != null) {
+                    val baos = ByteArrayOutputStream()
+                    image.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+                    val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                    put(
+                        JSONObject().put("type", "image_url")
+                            .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64"))
+                    )
                 }
             }
+
+            val payload = JSONObject().apply {
+                put("model", modelName)
+                put("stream", true)
+                put("temperature", temperatureValue.toDouble())
+                put(
+                    "messages",
+                    JSONArray().put(
+                        JSONObject().put("role", "user").put("content", contentArray)
+                    )
+                )
+            }
+
+            conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                throw IllegalStateException("Local model endpoint error ($code): $err")
+            }
+
+            conn.inputStream.bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    val trimmed = line.trim()
+                    if (!trimmed.startsWith("data:")) continue
+                    val data = trimmed.removePrefix("data:").trim()
+                    if (data == "[DONE]") break
+                    val delta = runCatching {
+                        JSONObject(data).optJSONArray("choices")
+                            ?.optJSONObject(0)
+                            ?.optJSONObject("delta")
+                    }.getOrNull() ?: continue
+                    val content = delta.opt("content") as? String ?: continue
+                    if (content.isNotEmpty()) emit(content)
+                }
+            }
+        } finally {
+            conn.disconnect()
         }
     }.flowOn(Dispatchers.IO)
 
