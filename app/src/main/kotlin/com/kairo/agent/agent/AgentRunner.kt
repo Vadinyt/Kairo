@@ -52,6 +52,24 @@ class AgentRunner(
         var firstTokenMs = 0L
         var chunkCount = 0
 
+        // Explicit read-only device status requests need no language-model tool selection.
+        if (settings.usesNativeModel && image == null && screenText.isNullOrBlank() &&
+            persona == AgentPersona.DEFAULT && isDirectDeviceStatusQuery(userPrompt)) {
+            emit(AgentStreamEvent.RunningTool("get_device_status"))
+            val result = tools.executeFromModelOutput(
+                rawOutput = """<tool_call>{"tool":"get_device_status","args":{}}</tool_call>"""
+            )
+            val summary = result.summary ?: "Device status unavailable"
+            emit(AgentStreamEvent.ToolCompleted(summary, result.success))
+            emit(AgentStreamEvent.Finished(
+                finalText = result.resultData?.takeIf { it.isNotBlank() } ?: summary,
+                actionSummary = summary,
+                actionSuccess = result.success,
+                stats = NerdStats()
+            ))
+            return@flow
+        }
+
         val route = classifyIntent(userPrompt, !screenText.isNullOrBlank())
         val baseRoutedPrompt = when (route) {
             MicroAgentRoute.TOOL_ACTION -> "$userPrompt\n[Router: Focus on accurate JSON tool-calling.]"
@@ -299,4 +317,13 @@ internal fun isLightweightChatQuery(query: String): Boolean {
     // "Explain to me" / "Explique-moi" are ordinary explanatory prefixes.
     val normalized = text.replace(Regex("""^(explain to me|explique[- ]moi)\b""", RegexOption.IGNORE_CASE), "explain")
     return !ACTION_OR_CONTEXT.containsMatchIn(normalized)
+}
+
+
+// Whole-message matches only; no model-generated tool names or write actions.
+private val DIRECT_STATUS_EN = Regex("""^(?:please\s+)?(?:(?:check|show(?: me)?|tell me|give me|what is|what's)\s+)?(?:my\s+|the\s+)?(?:battery(?:\s+(?:level|percentage|status))?(?:\s*(?:&|and)\s*(?:device\s+)?status)?|(?:phone|device)\s+status)(?:\s+please)?[?.!]*$""", RegexOption.IGNORE_CASE)
+private val DIRECT_STATUS_FR = Regex("""^(?:v[ée]rifie|affiche|donne-moi|quel est)\s+(?:mon|ma|le|la)\s+(?:batterie|niveau de batterie|(?:[ée]tat|statut) (?:du|de mon) t[ée]l[ée]phone)[?.!]*$""", RegexOption.IGNORE_CASE)
+internal fun isDirectDeviceStatusQuery(query: String): Boolean {
+    val text = query.trim().replace(Regex("""\s+([?.!])$"""), "$1")
+    return DIRECT_STATUS_EN.matches(text) || DIRECT_STATUS_FR.matches(text)
 }
