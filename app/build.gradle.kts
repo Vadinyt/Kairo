@@ -7,7 +7,7 @@ plugins {
 android {
   namespace = "com.kairo.agent"
   compileSdk = 36
-  ndkVersion = "29.0.13113456"
+  ndkVersion = "29.0.14206865"
   defaultConfig {
     applicationId = "com.kairo.agent"
     minSdk = 26
@@ -27,7 +27,7 @@ android {
   externalNativeBuild {
     cmake {
       path("src/main/cpp/CMakeLists.txt")
-      version = "3.22.1"
+      version = "3.31.5"
     }
   }
 
