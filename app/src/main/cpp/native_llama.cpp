@@ -50,7 +50,6 @@ Java_com_kairo_agent_engine_NativeLlama_nativeLoad(JNIEnv * env, jobject, jstrin
         auto next = std::make_unique<State>();
         auto mp = llama_model_default_params();
         mp.n_gpu_layers = 0;
-        mp.use_mmap = true;
         next->model = llama_model_load_from_file(filename.c_str(), mp);
         require(next->model != nullptr, "Unable to load GGUF. Check model and available RAM.");
         require(!llama_model_has_encoder(next->model), "Encoder models are unsupported.");
